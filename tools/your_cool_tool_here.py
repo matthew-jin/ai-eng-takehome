@@ -1,2 +1,2 @@
-# You can fill in and add your own tools in this directory
-# Take a look at run_sql.py for examples.
+# You can fill in and add your own tools in this directory.
+# Take a look at submit_answer.py for an example.
