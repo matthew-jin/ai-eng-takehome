@@ -26,8 +26,7 @@ SUBMIT_ANSWER: Tool = Tool(
     description=(
         "Submit your final SQL query as the answer to the current question. "
         "Use this tool when you are confident that your query correctly "
-        "answers the question. You should test your query with run_sql first "
-        "to verify it produces the expected results."
+        "answers the question."
     ),
     parameters={
         "type": "object",

@@ -14,8 +14,6 @@ from rich.prompt import Prompt
 from framework.agent import Agent, Tool
 from framework.llm import OpenRouterConfig
 from framework.stream_printer import StreamPrinter
-from tools.inspect_database import INSPECT_DATABASE
-from tools.run_sql import RUN_SQL
 from tools.submit_answer import SUBMIT_ANSWER
 
 
@@ -26,8 +24,6 @@ def create_tools() -> dict[str, Tool]:
         Dictionary mapping tool names to Tool instances.
     """
     return {
-        INSPECT_DATABASE.name: INSPECT_DATABASE,
-        RUN_SQL.name: RUN_SQL,
         SUBMIT_ANSWER.name: SUBMIT_ANSWER,
         # You can add your own tools here to test!
     }
@@ -55,7 +51,7 @@ def print_welcome(console: Console) -> None:
     welcome_text = (
         "[bold cyan]Agent Interactive REPL[/bold cyan]\n\n"
         "Enter your prompts to interact with the agent.\n"
-        "The agent has access to a SQL tool for querying databases.\n\n"
+        "The agent has access to tools for answering questions.\n\n"
         "[dim]Commands:[/dim]\n"
         "  [yellow]quit[/yellow] or [yellow]exit[/yellow] - Exit the REPL\n"
         "  [yellow]reset[/yellow] - Reset the conversation history\n"
