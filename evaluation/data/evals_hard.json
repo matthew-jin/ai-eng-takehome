@@ -145,7 +145,7 @@
     },
     {
         "prompt": "Find the top 30 constructors with the highest number of races where at least two cars started.",
-        "query": "SELECT c.name as constructor, COUNT(DISTINCT r1.raceId) as races_at_least_two_started FROM ErgastF1.results r1 JOIN ErgastF1.results r2 ON r1.raceId = r2.raceId AND r1.constructorId = r2.constructorId AND r1.resultId < r2.resultId JOIN ErgastF1.constructors c ON r1.constructorId = c.constructorId WHERE r1.grid > 0 AND r2.grid > 0 GROUP BY c.constructorId, c.name ORDER BY races_both_started DESC LIMIT 30"
+        "query": "SELECT c.name as constructor, COUNT(DISTINCT r1.raceId) as races_at_least_two_started FROM ErgastF1.results r1 JOIN ErgastF1.results r2 ON r1.raceId = r2.raceId AND r1.constructorId = r2.constructorId AND r1.resultId < r2.resultId JOIN ErgastF1.constructors c ON r1.constructorId = c.constructorId WHERE r1.grid > 0 AND r2.grid > 0 GROUP BY c.constructorId, c.name ORDER BY races_at_least_two_started DESC LIMIT 30"
     },
     {
         "prompt": "List the top 50 capital cities by population, along with their countries.",
