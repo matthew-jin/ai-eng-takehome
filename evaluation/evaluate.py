@@ -48,7 +48,11 @@ from rich.text import Text
 from evaluation.compare import loosely_compare_dataframes
 from framework.agent import ANSWER_SUBMITTED_PREFIX, Agent, AgentEvent, EventType, Tool
 from framework.database import execute_query
+from framework.index import AgentIndex
 from framework.llm import OpenRouterConfig, TokenUsage
+from tools.explore_database import make_explore_tools
+from tools.get_business_rules import make_business_rules_tool
+from tools.run_query import RUN_QUERY
 from tools.submit_answer import SUBMIT_ANSWER
 
 # =============================================================================
@@ -134,7 +138,7 @@ def save_trace(
 # =============================================================================
 
 
-def create_tools() -> dict[str, Tool]:
+def create_tools(index: AgentIndex) -> dict[str, Tool]:
     """Create the tools for the agent.
 
     Modify this function to add or remove tools from the agent.
@@ -143,11 +147,15 @@ def create_tools() -> dict[str, Tool]:
     Returns:
         A dictionary mapping tool names to Tool objects.
     """
-    return {
+    tools: dict[str, Tool] = {
         SUBMIT_ANSWER.name: SUBMIT_ANSWER,
-        # Add your custom tools here:
-        # MY_TOOL.name: MY_TOOL,
+        RUN_QUERY.name: RUN_QUERY,
     }
+    for tool in make_explore_tools(index):
+        tools[tool.name] = tool
+    tools_br = make_business_rules_tool(index)
+    tools[tools_br.name] = tools_br
+    return tools
 
 
 # =============================================================================
@@ -563,19 +571,19 @@ def create_status_table(
 def _run_single_eval_worker(
     case: EvalCase,
     case_index: int,
-    tools: dict[str, Tool],
+    index: AgentIndex,
     api_key: str,
     log_dir: Path | None = None,
     verbose: bool = False,
 ) -> tuple[int, EvalResult]:
     """Worker function to run a single evaluation in a thread.
 
-    Creates its own Agent instance to avoid shared state issues.
+    Creates its own Agent and tools to avoid shared state issues.
 
     Args:
         case: The evaluation case to run.
         case_index: Index of the case (for ordering results).
-        tools: Tools to provide to the agent.
+        index: Preloaded AgentIndex (read-only, safe to share).
         api_key: OpenRouter API key.
         log_dir: Optional directory to save agent traces to.
         verbose: Whether to enable verbose logging.
@@ -586,15 +594,22 @@ def _run_single_eval_worker(
     # Create evaluation config for this worker
     eval_config = EvalConfig(verbose=verbose, log_dir=log_dir)
 
-    # Each worker creates its own agent to avoid shared state
-    llm_config = OpenRouterConfig(api_key=api_key)
+    # Each worker creates its own tools (with fresh dedup caches) and agent
+    tools = create_tools(index)
+    llm_config = OpenRouterConfig(
+        api_key=api_key,
+        temperature=0.2,
+        compress_context=True,
+        compress_keep_recent=4,
+        compress_max_chars=300,
+    )
     agent = Agent(config=llm_config, tools=tools)
     result = run_single_eval(agent, case, eval_config)
     return case_index, result
 
 
 def evaluate_split(
-    tools: dict[str, Tool],
+    index: AgentIndex,
     eval_file: Path,
     console: Console,
     api_key: str,
@@ -606,7 +621,7 @@ def evaluate_split(
     """Run evaluation on a single split.
 
     Args:
-        tools: Tools to provide to the agent.
+        index: Preloaded AgentIndex.
         eval_file: Path to the evaluation JSON file.
         console: Rich console for output.
         api_key: OpenRouter API key.
@@ -641,8 +656,6 @@ def evaluate_split(
 
     if concurrency == 1:
         # Sequential execution (original behavior)
-        llm_config = OpenRouterConfig(api_key=api_key)
-        agent = Agent(config=llm_config, tools=tools)
         eval_config = EvalConfig(verbose=verbose, log_dir=split_log_dir)
 
         with Live(
@@ -652,7 +665,16 @@ def evaluate_split(
             transient=False,
         ) as live:
             for case in cases:
-                agent.reset_conversation()
+                # Fresh tools (with clean dedup caches) per case
+                tools = create_tools(index)
+                llm_config = OpenRouterConfig(
+                    api_key=api_key,
+                    temperature=0.2,
+                    compress_context=True,
+                    compress_keep_recent=4,
+                    compress_max_chars=300,
+                )
+                agent = Agent(config=llm_config, tools=tools)
                 result = run_single_eval(agent, case, eval_config)
                 split_results.results.append(result)
                 live.update(
@@ -682,7 +704,7 @@ def evaluate_split(
                         _run_single_eval_worker,
                         case,
                         idx,
-                        tools,
+                        index,
                         api_key,
                         split_log_dir,
                         verbose,
@@ -970,11 +992,18 @@ def main() -> None:
     console = Console()
 
     console.print("[bold]SQL Agent Evaluation[/bold]")
-    console.print("[dim]Loading tools and preparing agent...[/dim]\n")
+    console.print("[dim]Building index and preparing agent...[/dim]\n")
 
-    # Get tools from the configurable function
-    tools = create_tools()
-    console.print(f"[dim]Agent tools: {', '.join(tools.keys())}[/dim]")
+    # Build the index (scans DB + guides, instant after first call)
+    index = AgentIndex.build()
+    console.print(
+        f"[dim]Index: {len(index.get_schema_list())} schemas, "
+        f"{len(index.get_all_guide_topics())} guides[/dim]"
+    )
+
+    # Preview tools
+    preview_tools = create_tools(index)
+    console.print(f"[dim]Agent tools: {', '.join(preview_tools.keys())}[/dim]")
     if args.concurrency > 1:
         console.print(f"[dim]Concurrency: {args.concurrency}[/dim]")
 
@@ -1010,7 +1039,7 @@ def main() -> None:
     for eval_file in eval_files:
         try:
             results = evaluate_split(
-                tools,
+                index,
                 eval_file,
                 console,
                 args.api_key,

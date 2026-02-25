@@ -14,5 +14,8 @@ wheels/
 # Evaluation trace logs
 logs/
 
+# Agent index cache
+.cache/
+
 # Downloaded CTU databases (zipped version tracked with Git LFS)
 *.duckdb

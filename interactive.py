@@ -12,37 +12,50 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 
 from framework.agent import Agent, Tool
+from framework.index import AgentIndex
 from framework.llm import OpenRouterConfig
 from framework.stream_printer import StreamPrinter
+from tools.explore_database import make_explore_tools
+from tools.get_business_rules import make_business_rules_tool
+from tools.run_query import RUN_QUERY
 from tools.submit_answer import SUBMIT_ANSWER
 
 
-def create_tools() -> dict[str, Tool]:
+def create_tools(index: AgentIndex) -> dict[str, Tool]:
     """Create the tools for the agent.
 
     Returns:
         Dictionary mapping tool names to Tool instances.
     """
-    return {
+    tools: dict[str, Tool] = {
         SUBMIT_ANSWER.name: SUBMIT_ANSWER,
-        # You can add your own tools here to test!
+        RUN_QUERY.name: RUN_QUERY,
     }
+    for tool in make_explore_tools(index):
+        tools[tool.name] = tool
+    br_tool = make_business_rules_tool(index)
+    tools[br_tool.name] = br_tool
+    return tools
 
 
-def create_agent(api_key: str) -> Agent:
+def create_agent(api_key: str, index: AgentIndex) -> Agent:
     """Create and configure the agent with default settings.
 
     Args:
         api_key: OpenRouter API key.
+        index: Preloaded AgentIndex.
 
     Returns:
         Configured Agent instance.
     """
     config = OpenRouterConfig(
         api_key=api_key,
-        # Defaults to gpt-oss-120b on Cerebras
+        temperature=0.2,
+        compress_context=True,
+        compress_keep_recent=4,
+        compress_max_chars=300,
     )
-    tools = create_tools()
+    tools = create_tools(index)
     return Agent(config=config, tools=tools)
 
 
@@ -100,8 +113,15 @@ def main() -> None:
 
     print_welcome(console)
 
-    console.print("\n[dim]Connecting to OpenRouter...[/dim]")
-    agent = create_agent(args.api_key)
+    console.print("\n[dim]Building index...[/dim]")
+    index = AgentIndex.build()
+    console.print(
+        f"[dim]Index: {len(index.get_schema_list())} schemas, "
+        f"{len(index.get_all_guide_topics())} guides[/dim]"
+    )
+
+    console.print("[dim]Connecting to OpenRouter...[/dim]")
+    agent = create_agent(args.api_key, index)
     console.print("[green]Connected successfully![/green]\n")
 
     while True:
